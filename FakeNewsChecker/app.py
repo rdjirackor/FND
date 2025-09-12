@@ -243,7 +243,7 @@ def home():
         }
 
         # get google results
-        links ="butterfly" #google_search(text, num_results=5)
+        links =google_search(text, num_results=5)
 
     return render_template("index.html", result=result, links=links)
 
