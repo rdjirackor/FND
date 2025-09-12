@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fake News Detector</title>
+</head>
+<body>
+    <h1>Fake News Detector</h1>
+<form method="POST">
+    <textarea name="text_input" rows="4" cols="50" placeholder="Enter text..."></textarea><br>
+
+    <label for="model">Choose Model:</label>
+    <select name="model">
+        <option value="BERT">BERT</option>
+        <option value="SVM">SVM</option>
+        <option value="MLP">MLP</option>
+        <option value="LogReg">Logistic Regression</option>
+        <option value="NB">Naive Bayes</option>
+        <option value="RF">Random Forest</option>
+
+
+
+    </select><br>
+
+    <label for="vectorizer">Vectorizer (only for SVM/MLP):</label>
+    <select name="vectorizer">
+        <option value="TFIDF">TFIDF</option>
+        <option value="COUNT">Count</option>
+    </select><br>
+
+    <button type="submit">Check</button>
+</form>
+
+    
+
+    {% if result %}
+        <h2>Result:</h2>
+        <p><strong>Prediction:</strong> {{ result.prediction }}</p>
+        <p><strong>Confidence:</strong> {{ result.confidence }}</p>
+        <p><strong>Text:</strong> {{ result.text }}</p>
+        <p><strong>Model:</strong> {{ result.model }}</p>
+        {% if result.model == "SVM" %}
+            <p><strong>Vectorizer:</strong> {{ result.vectorizer }}</p>
+        {% endif %}
+
+        <h2>Related Google Results:</h2>
+        <ul>
+  {% for link in links %}
+            <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>
