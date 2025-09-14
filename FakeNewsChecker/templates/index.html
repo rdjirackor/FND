@@ -77,6 +77,22 @@
             </ul>
         </div>
         {% endif %}
+
+        {% if verdict %}
+<div class="result-box mt-4">
+    <h4>Fact Check Verdict</h4>
+    <p><strong>Text:</strong> {{ verdict.text }}</p>
+    <p><strong>Rating:</strong> {{ verdict.rating }}</p>
+    <p><strong>URL:</strong> 
+        {% if verdict.url %}
+            <a href="{{ verdict.url }}" target="_blank">{{ verdict.url }}</a>
+        {% else %}
+            [No URL available]
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
     </div>
 </body>
 

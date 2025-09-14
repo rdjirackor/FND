@@ -196,6 +196,29 @@ def google_search(query, num_results=5):
             return ["[No results or API misconfigured]"]
     except Exception as e:
         return [f"[Google API error: {e}]"]
+
+import requests
+
+def check_fact_claim(claim):
+    """
+    Uses Google Fact Check API (example) to search for verified claims.
+    """
+    API_KEY = "AIzaSyA0pla-m_gxPFGnRgnmh8txxc4SqJEs8_Y"
+    url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+    params = {"query": claim, "key": API_KEY}
+    response = requests.get(url, params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if "claims" in data and len(data["claims"]) > 0:
+            # Take the top fact-check result
+            claim_data = data["claims"][0]
+            text = claim_data.get("text", "")
+            rating = claim_data.get("claimReview", [{}])[0].get("textualRating", "Unknown")
+            url = claim_data.get("claimReview", [{}])[0].get("url", "")
+            return {"text": text, "rating": rating, "url": url}
+    return None
+
     
    
 
@@ -219,6 +242,8 @@ def save_feedback(text, prediction, confidence, feedback):
 def home():
     result = None
     links = []
+    verdict = None   # <-- define it here to avoid UnboundLocalError
+
     if request.method == "POST":
         text = request.form["text_input"]
 
@@ -242,10 +267,17 @@ def home():
             "vectorizer": vectorizer_choice
         }
 
-        # get google results
-        links =google_search(text, num_results=5)
+        # get google results (replace "butterfly" with your real search)
+        links = "butterfly" #google_search(text, num_results=5)
 
-    return render_template("index.html", result=result, links=links)
+        # fact check verdict
+        verdict = check_fact_claim(text)
+        
+
+    return render_template("index.html", result=result, verdict=verdict)
+
+
+
 
 @app.route("/feedback", methods=["POST"])
 def feedback():
