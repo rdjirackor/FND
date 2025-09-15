@@ -5,7 +5,6 @@ from transformers import BertTokenizer, BertModel
 import pandas as pd
 import requests
 import numpy as np
-import pickle
 import joblib
 import os
 
@@ -19,7 +18,7 @@ app = Flask(__name__)
 # 2. Load models
 # -------------------------
 MODEL_NAME = "bert-base-cased"
-MODEL_PATH = "Checkpoints/Bert/fake_news_model.pth"
+MODEL_PATH = "FakeNewsChecker/Checkpoints/Bert/fake_news_model.pth"
 tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
 
 class DiseaseMythBuster(nn.Module):
@@ -44,69 +43,16 @@ bert_model = DiseaseMythBuster(MODEL_NAME)
 bert_model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
 bert_model.eval()
 
-
-
-# Paths
-SVM_DIR = "Checkpoints/SVM"
-
-MLP_PATH = "Checkpoints/MLP/Ensemble_MLP.pkl"
-
-LOGREG_DIR = "Checkpoints/LogReg_Count"
-
-RF_DIR = "Checkpoints/RF"
-
-NB_DIR = "Checkpoints/NB"
-
-
-logreg_model = joblib.load(os.path.join(LOGREG_DIR, "logreg_model.pkl"))
-logreg_count_vectorizer = joblib.load(os.path.join(LOGREG_DIR, "count_vectorizer.pkl"))
-
-
-
-mlp_model = joblib.load(MLP_PATH)
-
-
+# Only keep SVM
+SVM_DIR = "FakeNewsChecker/Checkpoints/SVM"
 svm_tfidf = joblib.load(os.path.join(SVM_DIR, "svm_improved_tfidf.pkl"))
 svm_count = joblib.load(os.path.join(SVM_DIR, "svm_improved_count.pkl"))
 tfidf_vectorizer = joblib.load(os.path.join(SVM_DIR, "tfidf_improved_vectorizer.pkl"))
 count_vectorizer = joblib.load(os.path.join(SVM_DIR, "count_improved_vectorizer.pkl"))
 
 
-rf_model = joblib.load(os.path.join(RF_DIR, "rf_smote_tfidf.pkl"))
-
-
-
-
-
-
-
-class WeightedNBDetector:
-    def __init__(self, max_features=15000, ngram_range=(1,2)):
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.naive_bayes import MultinomialNB
-        self.vectorizer = TfidfVectorizer(stop_words='english', max_features=max_features, ngram_range=ngram_range)
-        self.model = MultinomialNB()
-        self.threshold = 0.5
-        self.fitted = False
-
-    def fit(self, texts, labels):
-        raise NotImplementedError("Training is not supported inside Flask. Load pretrained model instead.")
-
-    def predict(self, texts):
-        X = self.vectorizer.transform(texts)
-        probs = self.model.predict_proba(X)[:,1]
-        return (probs >= self.threshold).astype(int)
-
-    def predict_proba(self, texts):
-        X = self.vectorizer.transform(texts)
-        return self.model.predict_proba(X)
-
-nb_detector = joblib.load(os.path.join(NB_DIR, "weighted_nb_detector.pkl"))
-
-
-
 # -------------------------
-# 3. Prediction (BERT only for now)
+# 3. Prediction
 # -------------------------
 def predict_with_model(text, model_choice="BERT", vectorizer_choice="TFIDF", max_len=100, device="cpu"):
     if model_choice == "BERT":
@@ -130,47 +76,15 @@ def predict_with_model(text, model_choice="BERT", vectorizer_choice="TFIDF", max
         if vectorizer_choice.upper() == "TFIDF":
             X = tfidf_vectorizer.transform([text])
             score = svm_tfidf.decision_function(X)[0]
-        else:  # Count
+        else:
             X = count_vectorizer.transform([text])
             score = svm_count.decision_function(X)[0]
-
-        # Convert decision score → probability-like value
         prob = 1 / (1 + np.exp(-score))
         label = 1 if prob >= 0.5 else 0
         return label, float(prob)
-    
-    elif model_choice == "MLP":
-        if vectorizer_choice.upper() == "TFIDF":
-            X = tfidf_vectorizer.transform([text])
-        else:  # Count
-            X = count_vectorizer.transform([text])
-
-        prob = mlp_model.predict_proba(X)[0][1]  # probability of "Real"
-        label = 1 if prob >= 0.5 else 0
-        return label, float(prob)
-
-    elif model_choice == "LogReg":
-    # Only Count Vectorizer was trained here
-        X = logreg_count_vectorizer.transform([text])
-        prob = logreg_model.predict_proba(X)[0][1]  # probability of "Real"
-        label = 1 if prob >= 0.5 else 0
-        return label, float(prob)
-    
-    elif model_choice == "NB":
-    # Use the loaded WeightedNBDetector directly
-        probs = nb_detector.predict_proba([text])[:, 1][0]  # probability of "Real"
-        label = 1 if probs >= nb_detector.threshold else 0
-        return label, float(probs)
-
-    elif model_choice == "RF":
-        prob = rf_model.predict_proba([text])[0][1]  # probability of "Real"
-        label = 1 if prob >= 0.5 else 0
-        return label, float(prob)
-
-
-
 
     return 0, 0.5
+
 
 # -------------------------
 # 4. Google Search
@@ -182,48 +96,77 @@ def google_search(query, num_results=5):
     url = "https://www.googleapis.com/customsearch/v1"
     params = {
         "key": GOOGLE_API_KEY,
-         "cx": SEARCH_ENGINE_ID,
-          "q": query, "num": num_results
-           }
+        "cx": SEARCH_ENGINE_ID,
+        "q": query,
+        "num": num_results
+    }
     try:
         response = requests.get(url, params=params)
         results = response.json()
-        if "items" in results: 
-            return [item["link"] for item in results["items"]] 
+        if "items" in results:
+            return [item["link"] for item in results["items"]]
         else:
-            # Print error info in console 
             print("Google API error:", results)
             return ["[No results or API misconfigured]"]
     except Exception as e:
         return [f"[Google API error: {e}]"]
 
-import requests
-
-def check_fact_claim(claim):
-    """
-    Uses Google Fact Check API (example) to search for verified claims.
-    """
-    API_KEY = "AIzaSyA0pla-m_gxPFGnRgnmh8txxc4SqJEs8_Y"
-    url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
-    params = {"query": claim, "key": API_KEY}
-    response = requests.get(url, params=params)
-    
-    if response.status_code == 200:
-        data = response.json()
-        if "claims" in data and len(data["claims"]) > 0:
-            # Take the top fact-check result
-            claim_data = data["claims"][0]
-            text = claim_data.get("text", "")
-            rating = claim_data.get("claimReview", [{}])[0].get("textualRating", "Unknown")
-            url = claim_data.get("claimReview", [{}])[0].get("url", "")
-            return {"text": text, "rating": rating, "url": url}
-    return None
-
-    
-   
 
 # -------------------------
-# 5. Feedback persistence
+# 5. Facticity Fact Checker Integration
+# -------------------------
+FACTICITY_API_KEY = "d9a0f52a-9f3d-472a-bb23-b85fabb0a3de"
+FACTICITY_HEADERS = {
+    "X-API-KEY": FACTICITY_API_KEY,
+    "Content-Type": "application/json"
+}
+
+# -------------------------
+# 9. Facticity API Integration
+# -------------------------
+FACTICITY_API_KEY = "d9a0f52a-9f3d-472a-bb23-b85fabb0a3de"
+FACTICITY_URL = "https://api.facticity.ai/fact-check"
+
+def get_fact_checker_results(text, version="v3", timeout=60, mode="sync"):
+    headers = {
+        "X-API-KEY": FACTICITY_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "query": text,
+        "version": version,
+        "timeout": timeout,
+        "mode": mode
+    }
+    try:
+        response = requests.post(FACTICITY_URL, json=payload, headers=headers, timeout=timeout)
+        if response.status_code == 200:
+            data = response.json()
+            # Ensure sources are in proper format
+            formatted_sources = []
+            for s in data.get("sources", []):
+                # Sometimes sources come as JSON strings
+                if isinstance(s, str):
+                    try:
+                        s_dict = eval(s)  # convert string dict to actual dict safely
+                        formatted_sources.append(s_dict)
+                    except:
+                        continue
+                elif isinstance(s, dict):
+                    formatted_sources.append(s)
+            data["sources"] = formatted_sources
+            return data
+        else:
+            print("Fact Checker API Error:", response.status_code, response.text)
+    except Exception as e:
+        print("Fact Checker Exception:", e)
+    return None
+
+
+
+
+# -------------------------
+# 6. Feedback persistence
 # -------------------------
 def save_feedback(text, prediction, confidence, feedback):
     data = {
@@ -235,46 +178,65 @@ def save_feedback(text, prediction, confidence, feedback):
     df = pd.DataFrame(data)
     df.to_csv("feedback.csv", mode="a", header=False, index=False)
 
+
 # -------------------------
-# 6. Routes
+# 7. Routes
+# -------------------------
+# -------------------------
+# 7. Routes
 # -------------------------
 @app.route("/", methods=["GET", "POST"])
 def home():
     result = None
     links = []
-    verdict = None   # <-- define it here to avoid UnboundLocalError
 
     if request.method == "POST":
         text = request.form["text_input"]
 
-        # get values from the form
         model_choice = request.form.get("model", "BERT")  
         vectorizer_choice = request.form.get("vectorizer", "TFIDF")  
 
-        # run prediction
+        # -------------------------
+        # 1. Model Prediction
+        # -------------------------
         pred, confidence = predict_with_model(
             text,
             model_choice=model_choice,
             vectorizer_choice=vectorizer_choice
         )
+        confidence_percent = round(confidence * 100, 1)
+        prediction_text = "Real" if pred == 1 else "Fake"
 
-        # package result
+        # -------------------------
+        # 2. Facticity Fact-Checker
+        # -------------------------
+        fact_checker_results = get_fact_checker_results(text)
+
+        # -------------------------
+        # 3. Optional: Related Google Results
+        # -------------------------
+        if fact_checker_results and "sources" in fact_checker_results:
+            for s in fact_checker_results["sources"]:
+                try:
+                    source_link = s.get("link") if isinstance(s, dict) else None
+                    if source_link:
+                        links.append(source_link)
+                except Exception:
+                    continue
+
+        # -------------------------
+        # 4. Aggregate results
+        # -------------------------
         result = {
-            "prediction": "Real" if pred == 1 else "Fake",
-            "confidence": round(confidence, 3),
+            "prediction": prediction_text,
+            "confidence": confidence_percent,
             "text": text,
             "model": model_choice,
-            "vectorizer": vectorizer_choice
+            "vectorizer": vectorizer_choice,
+            "fact_checker": fact_checker_results  # Facticity API results
         }
 
-        # get google results (replace "butterfly" with your real search)
-        links = "butterfly" #google_search(text, num_results=5)
-
-        # fact check verdict
-        verdict = check_fact_claim(text)
-        
-
-    return render_template("index.html", result=result, verdict=verdict)
+    return render_template("index.html", result=result, links=links)
 
 
 
@@ -288,10 +250,9 @@ def feedback():
     save_feedback(text, prediction, confidence, feedback_value)
     return "Thank you for your feedback!"
 
+
 # -------------------------
-# 7. Run
+# 8. Run
 # -------------------------
 if __name__ == "__main__":
     app.run(debug=True)
-
-

@@ -1,65 +1,76 @@
-import torch
-import torch.nn as nn
-from transformers import BertModel, BertTokenizer
+import requests
 
-# --- Config ---
-MODEL_NAME = "bert-base-cased"
-final_model_path = "Checkpoints/Bert/fake_news_model.pth"
+# Your Facticity API key
+API_KEY = "d9a0f52a-9f3d-472a-bb23-b85fabb0a3de"
 
-# --- Redefine the model class ---
-class DiseaseMythBuster(nn.Module):
-    def __init__(self, model_name):
-        super(DiseaseMythBuster, self).__init__()
-        self.bert = BertModel.from_pretrained(model_name)
-        self.dropout = nn.Dropout(0.3)
-        self.fc1 = nn.Linear(768, 256)
-        self.fc2 = nn.Linear(256, 64)
-        self.fc3 = nn.Linear(64, 1)
-        self.relu = nn.ReLU()
+# Headers using X-API-KEY as per API documentation
+HEADERS = {
+    "X-API-KEY": API_KEY,
+    "Content-Type": "application/json"
+}
 
-    def forward(self, input_ids, attention_mask):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs.pooler_output
-        x = self.dropout(self.relu(self.fc1(pooled_output)))
-        x = self.dropout(self.relu(self.fc2(x)))
-        x = self.dropout(self.fc3(x))
-        return x
+def fact_check(query, version="v3", mode="sync", timeout=60):
+    """
+    Fact-check a single claim using Facticity API.
+    """
+    url = "https://api.facticity.ai/fact-check"
+    payload = {
+        "query": query,
+        "version": version,
+        "mode": mode,
+        "timeout": timeout
+    }
 
-# --- Rebuild & load trained weights ---
-inference_model = DiseaseMythBuster(MODEL_NAME)
-inference_model.load_state_dict(torch.load(final_model_path, map_location="cpu"))
-inference_model.eval()
+    try:
+        response = requests.post(url, json=payload, headers=HEADERS, timeout=timeout + 10)
+        if response.status_code == 200:
+            data = response.json()
+            print("\n=== Fact-Check Result ===")
+            print("Input:", data.get("input"))
+            print("Classification:", data.get("Classification"))
+            print("Assessment:", data.get("overall_assessment"))
+            print("Disambiguation:", data.get("disambiguation"))
+            print("Task ID:", data.get("task_id"))
+            print("\nSources:")
+            for s in data.get("sources", []):
+                print(s)
+        elif response.status_code == 401:
+            print("Error: Unauthorized. Check your API key or token balance.")
+        elif response.status_code == 408:
+            print("Error: Request timed out. Try increasing the timeout or use async mode.")
+        else:
+            print(f"Error {response.status_code}: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print("Request failed:", e)
 
-print("Model reloaded and ready for inference ✅")
+def extract_claims(text):
+    """
+    Extract individual claims from a block of text using Facticity API.
+    """
+    url = "https://api.facticity.ai/extract-claim"
+    payload = {
+        "input": text,
+        "content_type": "text"
+    }
 
-import torch
-from transformers import BertTokenizer
-import torch.nn.functional as F
+    try:
+        response = requests.post(url, json=payload, headers=HEADERS, timeout=60)
+        if response.status_code == 200:
+            claims = response.json().get("claims", [])
+            print("\n=== Extracted Claims ===")
+            if claims:
+                for i, claim in enumerate(claims, start=1):
+                    print(f"{i}. {claim}")
+            else:
+                print("No claims extracted.")
+        elif response.status_code == 401:
+            print("Error: Unauthorized. Check your API key or token balance.")
+        else:
+            print(f"Error {response.status_code}: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print("Request failed:", e)
 
-# --- Reload tokenizer ---
-MODEL_NAME = "bert-base-cased"
-tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
-
-# --- Define prediction function ---
-def predict(text, model, tokenizer, max_len=100, device="cpu"):
-    model.eval()
-    encoding = tokenizer(
-        text,
-        add_special_tokens=True,
-        max_length=max_len,
-        padding="max_length",
-        truncation=True,
-        return_tensors="pt"
-    )
-    input_ids = encoding["input_ids"].to(device)
-    attention_mask = encoding["attention_mask"].to(device)
-
-    with torch.no_grad():
-        outputs = model(input_ids, attention_mask)
-        probs = torch.sigmoid(outputs).cpu().numpy()[0][0]
-        label = int(probs >= 0.5)
-        return label, float(probs)
-
-sample_text = "people tripping covidbs19its kind like false prophet epidemics not epidemic impeccable timing political stuff like epidemics time frame elections stfu not sneeze n cough people"
-label, confidence = predict(sample_text, inference_model, tokenizer)
-print("Prediction:", "Fake" if label == 0 else "Real", "| Confidence:", confidence)
+if __name__ == "__main__":
+    # Example usage
+    fact_check("Coronavirus is a hoax")
+    extract_claims("Barack Obama was born in Kenya and the Earth is flat.")

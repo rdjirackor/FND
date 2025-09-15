@@ -10,6 +10,7 @@
         }
         .container {
             margin-top: 50px;
+            max-width: 900px;
         }
         .result-box {
             margin-top: 20px;
@@ -18,13 +19,37 @@
             background: #fff;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        .claim {
+            margin-bottom: 15px;
+        }
+        .score {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .confidenceGauge {
+            width: 150px !important;
+            height: 80px !important;
+        }
     </style>
+    <script>
+        // Show/hide vectorizer based on model selection
+        function toggleVectorizer() {
+            const model = document.querySelector("select[name='model']").value;
+            const vectorizerDiv = document.getElementById("vectorizerDiv");
+            if (model === "SVM") {
+                vectorizerDiv.style.display = "block";
+            } else {
+                vectorizerDiv.style.display = "none";
+            }
+        }
+    </script>
 </head>
 
 <body>
     <div class="container">
         <h1 class="text-center mb-4">Fake News Detector</h1>
 
+        <!-- Input Form -->
         <form method="POST" class="card p-4 shadow-sm">
             <div class="mb-3">
                 <label for="text_input" class="form-label">Enter text</label>
@@ -33,18 +58,14 @@
 
             <div class="mb-3">
                 <label for="model" class="form-label">Choose Model:</label>
-                <select name="model" class="form-select">
+                <select name="model" class="form-select" onchange="toggleVectorizer()">
                     <option value="BERT">BERT</option>
                     <option value="SVM">SVM</option>
-                    <option value="MLP">MLP</option>
-                    <option value="LogReg">Logistic Regression</option>
-                    <option value="NB">Naive Bayes</option>
-                    <option value="RF">Random Forest</option>
                 </select>
             </div>
 
-            <div class="mb-3">
-                <label for="vectorizer" class="form-label">Vectorizer (only for SVM/MLP):</label>
+            <div class="mb-3" id="vectorizerDiv" style="display:none;">
+                <label for="vectorizer" class="form-label">Vectorizer (only for SVM):</label>
                 <select name="vectorizer" class="form-select">
                     <option value="TFIDF">TFIDF</option>
                     <option value="COUNT">Count</option>
@@ -54,46 +75,140 @@
             <button type="submit" class="btn btn-primary w-100">Check</button>
         </form>
 
+        <!-- Results Section -->
         {% if result %}
         <div class="result-box mt-4">
             <h3>Result</h3>
-            <p><strong>Prediction:</strong> 
-                <span class="{{ 'text-success' if result.prediction == 'Real' else 'text-danger' }}">
+
+            <!-- Prediction with confidence -->
+            <p><strong>Prediction:</strong>
+                <span class="{% if result.prediction == 'Real' %}text-success{% elif result.prediction == 'Fake' %}text-danger{% else %}text-warning{% endif %}">
                     {{ result.prediction }}
                 </span>
+                ({{ result.confidence }}% confidence)
             </p>
-            <p><strong>Confidence:</strong> {{ result.confidence }}</p>
+
+            <div class="d-flex justify-content-center">
+
+            <!-- Confidence Gauge -->
+            <div class="text-center my-4">
+                <canvas id="confidenceGauge" width="100" height="50"></canvas>
+                <p><strong>Confidence:</strong> {{ result.confidence }}%</p>
+            </div>
+            </div>
+            <!-- Extra Info -->
             <p><strong>Text:</strong> {{ result.text }}</p>
             <p><strong>Model:</strong> {{ result.model }}</p>
             {% if result.model == "SVM" %}
                 <p><strong>Vectorizer:</strong> {{ result.vectorizer }}</p>
             {% endif %}
+        </div>
 
+        <!-- Fact Checker Section (synchronous server-rendered output) -->
+        <div class="result-box">
+            <h4>Fact Checker Analysis</h4>
+            {% if result and result.fact_checker %}
+                <p><strong>Input:</strong> {{ result.fact_checker.input }}</p>
+
+                <p><strong>Classification:</strong>
+                    <span class="{% if result.fact_checker.Classification == 'True' %}text-success{% elif result.fact_checker.Classification == 'False' %}text-danger{% else %}text-warning{% endif %}">
+                        {{ result.fact_checker.Classification }}
+                    </span>
+                </p>
+
+                {% if result.fact_checker.overall_assessment %}
+                <p><strong>Assessment:</strong> {{ result.fact_checker.overall_assessment }}</p>
+                {% endif %}
+
+                {% if result.fact_checker.disambiguation %}
+                <p><strong>Disambiguation:</strong> {{ result.fact_checker.disambiguation }}</p>
+                {% endif %}
+
+                <h5>Sources:</h5>
+                {% if result.fact_checker.sources %}
+                    <ul>
+                        {% for s in result.fact_checker.sources %}
+                            <li>
+                                {% if s.link %}
+                                    <a href="{{ s.link }}" target="_blank">{{ s.source or s.title or s.link }}</a>
+                                {% else %}
+                                    {{ s.source or s.title or 'Source' }}
+                                {% endif %}
+                                {% if s.summary %}: {{ s.summary }}{% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No sources found.</p>
+                {% endif %}
+
+            {% else %}
+                <p>No fact checker results available.</p>
+            {% endif %}
+        </div>
+
+        <!-- Google Results Section -->
+        <div class="result-box">
             <h4>Related Google Results</h4>
-            <ul>
-                {% for link in links %}
-                <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
-                {% endfor %}
-            </ul>
+            {% if links %}
+                <ul>
+                    {% for link in links %}
+                        <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No related results found.</p>
+            {% endif %}
         </div>
         {% endif %}
-
-        {% if verdict %}
-<div class="result-box mt-4">
-    <h4>Fact Check Verdict</h4>
-    <p><strong>Text:</strong> {{ verdict.text }}</p>
-    <p><strong>Rating:</strong> {{ verdict.rating }}</p>
-    <p><strong>URL:</strong> 
-        {% if verdict.url %}
-            <a href="{{ verdict.url }}" target="_blank">{{ verdict.url }}</a>
-        {% else %}
-            [No URL available]
-        {% endif %}
-    </p>
-</div>
-{% endif %}
-
     </div>
-</body>
 
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    {% if result %}
+    <script>
+    (function() {
+        // Confidence (numeric)
+        const confidence = Number("{{ result.confidence | float | default(0) }}");
+
+        // Prefer gaugeColor passed from backend; fallback to computed color if missing
+        let gaugeColor = "{{ result.gaugeColor if result.gaugeColor is defined else '' }}";
+        if (!gaugeColor) {
+            if (confidence >= 65) {
+                gaugeColor = "green";
+            } else if (confidence <= 35) {
+                gaugeColor = "red";
+            } else {
+                gaugeColor = "yellow";
+            }
+        }
+
+        const canvas = document.getElementById('confidenceGauge');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [confidence, Math.max(0, 100 - confidence)],
+                        backgroundColor: [gaugeColor, "#eaeaea"],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    rotation: -90,
+                    circumference: 180,
+                    cutout: '70%',
+                    plugins: {
+                        tooltip: { enabled: false },
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+    })();
+    </script>
+    {% endif %}
+</body>
 </html>
