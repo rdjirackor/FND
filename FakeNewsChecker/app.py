@@ -18,7 +18,7 @@ app = Flask(__name__)
 # 2. Load models
 # -------------------------
 MODEL_NAME = "bert-base-cased"
-MODEL_PATH = "FakeNewsChecker/Checkpoints/Bert/fake_news_model.pth"
+MODEL_PATH = "Checkpoints/Bert/fake_news_model.pth"
 tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
 
 class DiseaseMythBuster(nn.Module):
@@ -43,8 +43,7 @@ bert_model = DiseaseMythBuster(MODEL_NAME)
 bert_model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
 bert_model.eval()
 
-# Only keep SVM
-SVM_DIR = "FakeNewsChecker/Checkpoints/SVM"
+SVM_DIR = "Checkpoints/SVM"
 svm_tfidf = joblib.load(os.path.join(SVM_DIR, "svm_improved_tfidf.pkl"))
 svm_count = joblib.load(os.path.join(SVM_DIR, "svm_improved_count.pkl"))
 tfidf_vectorizer = joblib.load(os.path.join(SVM_DIR, "tfidf_improved_vectorizer.pkl"))
@@ -163,25 +162,6 @@ def get_fact_checker_results(text, version="v3", timeout=60, mode="sync"):
     return None
 
 
-
-
-# -------------------------
-# 6. Feedback persistence
-# -------------------------
-def save_feedback(text, prediction, confidence, feedback):
-    data = {
-        "text": [text],
-        "prediction": ["Real" if prediction == 1 else "Fake"],
-        "confidence": [confidence],
-        "user_feedback": [feedback]
-    }
-    df = pd.DataFrame(data)
-    df.to_csv("feedback.csv", mode="a", header=False, index=False)
-
-
-# -------------------------
-# 7. Routes
-# -------------------------
 # -------------------------
 # 7. Routes
 # -------------------------
@@ -247,7 +227,6 @@ def feedback():
     prediction = request.form["prediction"]
     confidence = request.form["confidence"]
     feedback_value = request.form["feedback"]
-    save_feedback(text, prediction, confidence, feedback_value)
     return "Thank you for your feedback!"
 
 
